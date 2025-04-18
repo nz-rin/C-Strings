@@ -30,6 +30,7 @@ typedef struct {
 }fast_strings;
 
 const static size_t STRING_SIZE = sizeof(String);
+const static size_t STRING_VIEW_SIZE = sizeof(string_view);
 
 /*String *new_string(const char* c_str){
 	size_t string_size = strlen(c_str) + 1;
@@ -81,11 +82,12 @@ void string_resize(String *str, size_t new_size){
 
 void string_clear(String *str){
 	str->length = 0;
-	str->capacity = 0;
 }
 
 void string_free(String *str){
 	free(str->data);
+	str->capacity= 0;
+	str->length = 0;
 }
 
 int string_compare(const String *str1, const String *str2){
