@@ -1,7 +1,6 @@
-*.
-*.o
-
-main
-main.c
+*
 
 !.gitignore
+!*.sh
+!*.c
+!*.h
