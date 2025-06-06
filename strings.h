@@ -44,14 +44,24 @@ typedef struct {
 	u64 hash;
 }fast_strings;
 
-const static size_t STRING_SIZE = sizeof(String);
-const static size_t STRING_VIEW_SIZE = sizeof(string_view);
+static const size_t STRING_SIZE = sizeof(String);
+static const size_t STRING_VIEW_SIZE = sizeof(string_view);
 
-String *string_new(const char* c_str);
+String string_new(const char* c_str);
+String *string_new_ptr(const char* c_str);
 int string_append(String *str, const char* append_data);
 int string_resize(String *str, size_t new_size);
 void string_clear(String *str);
 int string_free(String *str);
+
+/**
+ * Use this function to recycle a string, works on freed strings and on string holding data.
+ * if used on string with data in it, it will free the data, the freed data will be lost.
+ * If you just need to resize the string to a new capacity, you can pass in NULL for new_data.
+ * You dont have to calculate the lenght of the new string if you reassigning the string, as long new_data is valid
+ *   the function will scale the buffer.
+ */
+void string_reuse(String *str, size_t new_size, const char *new_data);
 
 /**
  * Sized strings arent gaurenteed to be null terminated and my contain garbage if the capacity > length.
@@ -82,11 +92,81 @@ int string_compare(const String *str1, const String *str2);
 int string_match(String *str, const char *char_seq);
 
 /**
- * White space is not considered alphanumeric by thi function.
+ * White space is not considered alphanumeric by this function.
  */
 int string_check_alpha_numeric(const String *const str);
 
 #ifdef STRINGS_IMPLEMENTATION
+
+String string_new(const char* c_str){
+	size_t string_len = strlen(c_str);
+	size_t string_cap = string_len*2;
+
+	char *new_string = (char*) malloc(string_cap);
+	memcpy(new_string, c_str, string_cap);
+	String str = {
+		.data = new_string,
+		.length = string_len,
+		.capacity = string_cap,
+	};
+	return str;
+}
+
+String *string_new_ptr(const char* c_str){
+	size_t string_len = strlen(c_str);
+	size_t string_cap = string_len*2;
+
+	char *new_string = (char*) malloc(string_cap);
+	memcpy(new_string, c_str, string_len);
+	String *str = (String *) malloc(STRING_SIZE);
+	str->data = new_string;
+	str->length = string_len;
+	str->capacity = string_cap;
+	return str;
+}
+
+void string_reuse(String *str, size_t new_string_size, const char *new_data){
+#ifndef DISABLE_CHECKS
+	if(str == NULL){
+		ERROR("From: string_reuse\n\tPassed in a Refrence to a NULL for String. STRING POINTER IS NOT VALID\nString reuse Aborted.");
+		return;
+	}
+	if((ssize_t) new_string_size < 0){
+		ERROR("From: string_reuse\n\tNegative Size passed for new_string_size, size_t will wrap around to a size larger than Malloc can provide, Malloc will fail.\nAborting reuse.");
+		return;
+	}
+
+	if(new_string_size == 0 && !new_data){
+		WARN("From: string_reuse\n\t 0 passed for new_string_size and no new string detected, Malloc might fail.\nFunction continuing");
+	}
+#endif
+
+	size_t new_data_size = 0;
+
+	if(new_data){
+		new_data_size = strlen(new_data);
+	}
+
+	if( new_data_size > new_string_size){
+		new_string_size = new_data_size;
+	}
+
+	string_ptr new_buffer = (string_ptr) malloc(new_string_size);
+
+	if(new_data){
+		memcpy(new_buffer, new_data, new_data_size);
+	}
+
+	if(str->data != NULL){
+		free(str->data);
+	}
+
+
+	str->data = new_buffer;
+	str->length = new_data_size;
+	str->capacity = new_string_size;
+}
+
 
 void string_println(String *str){
 #ifndef DISABLE_CHECKS
@@ -134,16 +214,6 @@ void string_print(String *str){
 	printf("%.*s", (int) str->length, str->data);
 }
 
-String *string_new(const char* c_str){
-	size_t string_size = strlen(c_str);
-	char *new_string = (char*) malloc(string_size+1);
-	memcpy(new_string, c_str, string_size);
-	String *str = (String *) malloc(STRING_SIZE);
-	str->data = new_string;
-	str->length = string_size;
-	str->capacity = string_size;
-	return str;
-}
 
 int string_append(String *str, const char* append_data){
 #ifndef DISABLE_CHECKS
@@ -166,12 +236,16 @@ int string_append(String *str, const char* append_data){
 #endif
 	size_t append_size = strlen(append_data);
 	if(str->capacity < str->length + append_size){
-		string_ptr new_string = (string_ptr) malloc((str->length + append_size)*2);
+		size_t new_string_size = (str->length + append_size)*2;
+		string_ptr new_string = (string_ptr) malloc(new_string_size);
+
 		memcpy(new_string, str->data, str->length);
-		memcpy(new_string+str->length, append_data, append_size);
+		char *next_ptr = &new_string[str->length];
+		memcpy(next_ptr, append_data, append_size);
+
 		free(str->data);
 		str->data = new_string;
-		str->capacity = (str->length + append_size)*2;
+		str->capacity = new_string_size;
 		str->length += append_size;
 		return 1;
 	}
@@ -190,7 +264,6 @@ int string_resize(String *str, size_t new_size){
 	if(str->capacity < new_size){
 		free(str->data);
 		str->data = (string_ptr) malloc(new_size);
-		return 1;
 	}
 
 	str->capacity = new_size;

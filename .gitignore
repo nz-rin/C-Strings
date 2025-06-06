@@ -1,4 +1,7 @@
-main
-main.c
 *.
 *.o
+
+main
+main.c
+
+!.gitignore
